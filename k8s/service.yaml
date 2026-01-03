@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: static-web-svc
+spec:
+  type: LoadBalancer
+  selector:
+    app: static-web
+  ports:
+    - port: 80
+      targetPort: 80
+

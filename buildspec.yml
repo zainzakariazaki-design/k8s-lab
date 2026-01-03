@@ -1,0 +1,39 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_REGION: ap-south-1
+    EKS_CLUSTER_NAME: eks-web-lab
+    ECR_REPO: eks-static-web
+    K8S_NAMESPACE: default
+
+phases:
+  pre_build:
+    commands:
+      - echo "Login to ECR..."
+      - ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - ECR_URI=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+      - aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_URI}
+      - IMAGE_TAG=$(echo ${CODEBUILD_RESOLVED_SOURCE_VERSION} | cut -c 1-8)
+      - IMAGE_URI=${ECR_URI}/${ECR_REPO}:${IMAGE_TAG}
+
+      - echo "Configure kubectl..."
+      - aws eks update-kubeconfig --region ${AWS_REGION} --name ${EKS_CLUSTER_NAME}
+
+  build:
+    commands:
+      - echo "Build image..."
+      - docker build -t ${ECR_REPO}:${IMAGE_TAG} .
+      - docker tag ${ECR_REPO}:${IMAGE_TAG} ${IMAGE_URI}
+
+  post_build:
+    commands:
+      - echo "Push image..."
+      - docker push ${IMAGE_URI}
+
+      - echo "Deploy manifests..."
+      - sed -i "s|IMAGE_URI|${IMAGE_URI}|g" k8s/deployment.yaml
+      - kubectl apply -n ${K8S_NAMESPACE} -f k8s/deployment.yaml
+      - kubectl apply -n ${K8S_NAMESPACE} -f k8s/service.yaml
+      - kubectl get svc -n ${K8S_NAMESPACE} static-web-svc
+
